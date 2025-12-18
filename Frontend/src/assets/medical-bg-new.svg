@@ -1,0 +1,50 @@
+<svg width="1920" height="1080" viewBox="0 0 1920 1080" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="medicalGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E5F5FF" stop-opacity="1"/>
+      <stop offset="50%" stop-color="#D2E7F0" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#B5F4F0" stop-opacity="1"/>
+    </linearGradient>
+    <pattern id="medicalPattern" x="0" y="0" width="200" height="200" patternUnits="userSpaceOnUse">
+      <rect width="200" height="200" fill="url(#medicalGradient)"/>
+      <path d="M100 50L100 150M50 100L150 100" stroke="#3B82F6" stroke-width="2" stroke-opacity="0.1"/>
+      <circle cx="100" cy="100" r="3" fill="#3B82F6" fill-opacity="0.1"/>
+    </pattern>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="1920" height="1080" fill="url(#medicalGradient)"/>
+  
+  <!-- Medical Pattern -->
+  <rect width="1920" height="1080" fill="url(#medicalPattern)"/>
+  
+  <!-- Medical Crosses -->
+  <g fill="#3B82F6" fill-opacity="0.05">
+    <path d="M200 200L200 300L300 300L300 200L250 200L250 150L200 150Z"/>
+    <path d="M600 400L600 500L700 500L700 400L650 400L650 350L600 350Z"/>
+    <path d="M1000 100L1000 200L1100 200L1100 100L1050 100L1050 50L1000 50Z"/>
+    <path d="M1400 600L1400 700L1500 700L1500 600L1450 600L1450 550L1400 550Z"/>
+    <path d="M1800 300L1800 400L1900 400L1900 300L1850 300L1850 250L1800 250Z"/>
+  </g>
+  
+  <!-- Medical Circles -->
+  <g fill="#3B82F6" fill-opacity="0.03">
+    <circle cx="300" cy="300" r="80"/>
+    <circle cx="800" cy="200" r="60"/>
+    <circle cx="1200" cy="600" r="100"/>
+    <circle cx="1600" cy="400" r="70"/>
+    <circle cx="400" cy="800" r="90"/>
+  </g>
+  
+  <!-- Central Medical Symbol -->
+  <g transform="translate(960, 540)">
+    <circle cx="0" cy="0" r="120" fill="#3B82F6" fill-opacity="0.1"/>
+    <path d="M-60 0L60 0M0 -60L0 60" stroke="#3B82F6" stroke-width="8" stroke-opacity="0.3" stroke-linecap="round"/>
+    <circle cx="0" cy="0" r="15" fill="#3B82F6" fill-opacity="0.4"/>
+  </g>
+  
+  <!-- Subtle Text -->
+  <text x="960" y="200" font-family="Arial, sans-serif" font-size="48" font-weight="300" text-anchor="middle" fill="#3B82F6" fill-opacity="0.1">Medical AI Assistant</text>
+  <text x="960" y="880" font-family="Arial, sans-serif" font-size="24" font-weight="300" text-anchor="middle" fill="#3B82F6" fill-opacity="0.08">AI-Powered Medical Information</text>
+</svg>
+

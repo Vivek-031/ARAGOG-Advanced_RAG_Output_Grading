@@ -1,0 +1,229 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Medical RAG Design System - Clean pastel blue theme */
+/* All colors MUST be HSL for runtime dark mode switching */
+
+@layer base {
+  :root {
+    /* Light mode - Pastel blue brand */
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    
+    /* Primary: Pastel blue */
+    --primary: 201 73% 76%;
+    --primary-hover: 201 68% 72%;
+    --primary-foreground: 0 0% 100%;
+    --primary-text: 220 13% 18%;
+    
+    /* Shade palette for gradients and accents - Blue tints */
+    --shade-1: 207 56% 89%;
+    --shade-2: 210 73% 96%;
+    --shade-3: 202 47% 81%;
+    --shade-4: 201 68% 79%;
+    --shade-5: 201 73% 76%;
+    
+    /* Background and surfaces */
+    --bg: 200 33% 97%;
+    --border: 210 20% 88%;
+    
+    /* Semantic colors */
+    --success: 142.1 76.2% 36.3%;
+    --warning: 47.9 95.8% 53.1%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    
+    /* Muted colors */
+    --muted: 210 20% 96%;
+    --muted-foreground: 220 9% 46%;
+    --muted-text: 220 9% 46%;
+    
+    /* Accent (maps to primary) */
+    --accent: 201 73% 85%;
+    --accent-foreground: 210 24% 10%;
+    
+    /* Input and ring */
+    --input: 210 20% 88%;
+    --ring: 201 73% 76%;
+    
+    --radius: 0.5rem;
+    
+    /* Shadow variables */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    --shadow-hover: 0 20px 25px -5px rgba(163, 206, 241, 0.3);
+    
+    /* Sidebar styling */
+    --sidebar-background: 210 20% 98%;
+    --sidebar-foreground: 220 13% 18%;
+    --sidebar-primary: 201 73% 76%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 20% 94%;
+    --sidebar-accent-foreground: 220 13% 18%;
+    --sidebar-border: 210 20% 90%;
+    --sidebar-ring: 201 73% 76%;
+  }
+
+  .dark {
+    /* Dark mode adjustments */
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    
+    /* Primary: Slightly brighter in dark mode */
+    --primary: 270 90% 65%;
+    --primary-hover: 270 90% 70%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary-text: 215 20.2% 65.1%;
+    
+    /* Adjusted shades for dark mode */
+    --shade-1: 270 50% 20%;
+    --shade-2: 270 50% 30%;
+    --shade-3: 270 90% 65%;
+    --shade-4: 270 90% 55%;
+    --shade-5: 270 90% 45%;
+    
+    --bg: 217.2 32.6% 17.5%;
+    --border: 217.2 32.6% 17.5%;
+    
+    --success: 142.1 76.2% 36.3%;
+    --warning: 47.9 95.8% 53.1%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --muted-text: 215 20.2% 65.1%;
+    
+    --accent: 270 90% 65%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    
+    --input: 217.2 32.6% 17.5%;
+    --ring: 270 90% 65%;
+    
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 270 90% 65%;
+    --sidebar-primary-foreground: 222.2 47.4% 11.2%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 270 90% 65%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-bg text-foreground;
+    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  /* Focus styles for accessibility */
+  *:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    border-radius: var(--radius);
+  }
+  
+  /* Heading font (Plus Jakarta Sans / Inter bold) */
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  
+  /* Glass card effect */
+  .glass-card {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid hsl(var(--border));
+    box-shadow: var(--shadow-md);
+    border-radius: var(--radius);
+    transition: all 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  
+  .glass-card:hover {
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: var(--shadow-hover);
+    transform: translateY(-2px);
+  }
+  
+  /* Gradient utilities */
+  .gradient-primary {
+    background: linear-gradient(135deg, hsl(var(--shade-3)), hsl(var(--shade-5)));
+  }
+  
+  .gradient-text {
+    background: linear-gradient(135deg, hsl(var(--shade-3)), hsl(var(--shade-4)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+}
+
+/* Animations - respect reduced motion */
+@layer utilities {
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  @keyframes pulse-border {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+  
+  .animate-fade-in {
+    animation: fadeIn 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  
+  .animate-pulse-border {
+    animation: pulse-border 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
+
+/* Accessibility: Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  
+  .animate-pulse-border {
+    animation: none !important;
+  }
+}

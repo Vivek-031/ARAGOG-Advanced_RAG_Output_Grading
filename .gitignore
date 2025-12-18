@@ -1,0 +1,26 @@
+# Node modules (anywhere)
+**/node_modules/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Model checkpoints / large files
+medical_qa_checkpoints/
+
+# Zip files
+*.zip
+
+# Environment variables
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python virtual environments
+venv/
+**/venv/
+
+# Python site-packages
+**/site-packages/
