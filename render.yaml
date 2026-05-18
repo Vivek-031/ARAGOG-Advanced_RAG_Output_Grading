@@ -1,0 +1,75 @@
+services:
+  - type: web
+    name: medirag-backend
+    runtime: python310
+    region: oregon
+    plan: standard
+    numInstances: 1
+    
+    buildCommand: |
+      pip install --upgrade pip && \
+      pip install -r Backend/Backend/requirements.txt
+    
+    startCommand: |
+      cd Backend/Backend && \
+      python app.py
+    
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: FLASK_DEBUG
+        value: "False"
+      - key: PORT
+        value: "5000"
+      - key: DB_HOST
+        fromDatabase:
+          name: medirag-db
+          envVarKey: HOST
+      - key: DB_USER
+        fromDatabase:
+          name: medirag-db
+          envVarKey: USER
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: medirag-db
+          envVarKey: PASSWORD
+      - key: DB_DATABASE
+        fromDatabase:
+          name: medirag-db
+          envVarKey: DATABASE
+    
+    healthCheckPath: /api/health
+    healthCheckTimeout: 600
+    disk:
+      name: model-storage
+      path: /var/data
+      sizeGb: 25
+
+  - type: web
+    name: medirag-frontend
+    runtime: node
+    region: oregon
+    plan: free
+    
+    buildCommand: |
+      cd Frontend && \
+      npm install && \
+      npm run build
+    
+    startCommand: npm run start
+    staticPublishPath: Frontend/dist
+    
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: medirag-backend
+          envVarKey: RENDER_EXTERNAL_URL
+
+databases:
+  - name: medirag-db
+    region: oregon
+    databaseName: user_auth
+    version: "8"
+    plan: starter
+    maxConnections: 10

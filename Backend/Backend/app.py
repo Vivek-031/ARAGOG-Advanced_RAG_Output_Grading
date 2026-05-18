@@ -3,13 +3,23 @@ MediRAG Backend - Flask API with Optimized Medical RAG Pipeline
 Uses multi-domains-medical-final-rag-model.py as the core engine
 """
 
+# ============================================================================
+# IMPORTS - ALL AT TOP
+# ============================================================================
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import mysql.connector
+import sqlite3
 from datetime import datetime
 import os
 import sys
 import time
+import re
+import hashlib
+import secrets
+import traceback
+from typing import Optional
+import torch
 
 # Add current directory to Python path
 sys.path.append(os.path.dirname(__file__))
@@ -18,13 +28,119 @@ sys.path.append(os.path.dirname(__file__))
 try:
     from dotenv import load_dotenv
     load_dotenv()
-except Exception:
+except Exception as e:
+    print(f"[WARN] Could not load .env file: {e}")
     pass
 
 # Import the optimized Medical RAG pipeline
-from typing import Optional
 pipeline_instance: Optional[object] = None
 pipeline_initialized = False
+
+FALLBACK_DOMAINS = [
+    {"name": "general_medical", "dataset": "General Medical"},
+    {"name": "mental_health", "dataset": "Mental Health"},
+    {"name": "ophthalmology", "dataset": "Ophthalmology"},
+    {"name": "pediatrics", "dataset": "Pediatrics"},
+    {"name": "symptoms_triage", "dataset": "Symptoms Triage"},
+    {"name": "women_health", "dataset": "Women Health"},
+    {"name": "Cancer", "dataset": "Cancer Medical QA"},
+    {"name": "Cardiology", "dataset": "Cardiology Medical QA"},
+    {"name": "Dermatology", "dataset": "Dermatology Medical QA"},
+    {"name": "Diabetes-Digestive-Kidney", "dataset": "Diabetes/Digestive/Kidney Medical QA"},
+    {"name": "Neurology", "dataset": "Neurology Medical QA"},
+]
+
+
+class FallbackMedicalPipeline:
+    """Lightweight fallback when full RAG dependencies cannot be imported."""
+
+    def __init__(self, init_error: str):
+        self.init_error = init_error
+
+    def _is_emergency(self, query: str) -> bool:
+        q = query.lower()
+        emergency_terms = [
+            "chest pain", "can't breathe", "cannot breathe", "difficulty breathing",
+            "unconscious", "seizure", "stroke", "heart attack", "bleeding heavily",
+            "suicide", "overdose", "poison", "severe allergic", "anaphylaxis"
+        ]
+
+        if any(term in q for term in emergency_terms):
+            return True
+
+        fever_match = re.search(r"(\d{2,3}(?:\.\d+)?)\s*(?:degree|degrees|f|fahrenheit)", q)
+        if fever_match:
+            try:
+                temp_f = float(fever_match.group(1))
+                if temp_f >= 104:
+                    return True
+            except ValueError:
+                return False
+        return False
+
+    def run_query(self, query: str):
+        query_l = query.lower().strip()
+
+        medical_keywords = [
+            "fever", "pain", "medicine", "doctor", "hospital", "symptom", "disease",
+            "infection", "blood", "headache", "vomit", "cough", "diarrhea", "pregnant",
+            "child", "baby", "diabetes", "cancer", "heart", "lung", "kidney", "skin"
+        ]
+
+        is_medical = any(k in query_l for k in medical_keywords)
+        is_emergency = self._is_emergency(query)
+
+        if not is_medical:
+            return {
+                "query": query,
+                "query_type": "general",
+                "requires_general_response": True,
+                "answer": "",
+                "domains": [],
+                "metrics": {"composite": 0.0},
+                "sources": [],
+                "is_emergency": False,
+                "processing_time": 0.01,
+            }
+
+        if is_emergency:
+            answer = (
+                "This may be a medical emergency. If temperature is 109 F, seek emergency care immediately "
+                "or call your local emergency number now. While waiting: keep the person cool, offer small "
+                "sips of water if fully awake, and do not delay hospital evaluation."
+            )
+        else:
+            answer = (
+                "I can provide general medical guidance, but the advanced medical model is temporarily "
+                "unavailable. Please consult a licensed clinician for diagnosis and treatment."
+            )
+
+        return {
+            "query": query,
+            "query_type": "medical",
+            "answer": answer,
+            "domains": ["general_medical"],
+            "metrics": {"composite": 0.4},
+            "sources": [],
+            "is_emergency": is_emergency,
+            "processing_time": 0.01,
+        }
+
+
+def get_domain_catalog():
+    """Return domain metadata without hard-failing when RAG module import breaks."""
+    try:
+        from multi_domains_medical_final_rag_model import DOMAINS
+        return [
+            {
+                "name": d.name,
+                "dataset": d.dataset_name,
+                "index_path": d.index_path,
+            }
+            for d in DOMAINS
+        ]
+    except Exception:
+        return [{"name": d["name"], "dataset": d["dataset"], "index_path": None} for d in FALLBACK_DOMAINS]
 
 def initialize_rag_pipeline():
     """Initialize the memory-efficient RAG pipeline once"""
@@ -40,11 +156,18 @@ def initialize_rag_pipeline():
         print("="*80)
         
         # Import pipeline components
-        from multi_domains_medical_final_rag_model import (
-            MemoryEfficientRAGPipeline, 
-            config, 
-            DOMAINS
-        )
+        try:
+            from multi_domains_medical_final_rag_model import (
+                MemoryEfficientRAGPipeline, 
+                config, 
+                DOMAINS
+            )
+        except ImportError as ie:
+            print(f"[WARN] Could not import MemoryEfficientRAGPipeline: {ie}")
+            print("[WARN] Checking if module path is correct...")
+            print(f"[WARN] Current directory: {os.getcwd()}")
+            print(f"[WARN] Python path: {sys.path[:3]}")
+            raise
         
         # Initialize pipeline
         pipeline_instance = MemoryEfficientRAGPipeline(config, DOMAINS)
@@ -61,9 +184,13 @@ def initialize_rag_pipeline():
     except Exception as e:
         print(f"\n[ERROR] ERROR INITIALIZING RAG PIPELINE:")
         print(f"   {str(e)}")
-        print("   Backend will start but RAG queries will fail")
+        print(f"   Full traceback:")
+        traceback.print_exc()
+        pipeline_instance = FallbackMedicalPipeline(str(e))
+        pipeline_initialized = True
+        print("   Full RAG unavailable; using lightweight medical fallback")
         print("="*80 + "\n")
-        return False
+        return True
 
 
 app = Flask(__name__)
@@ -74,43 +201,36 @@ CORS(app)
 # ============================================================================
 
 def get_db_connection():
-    """Get a fresh database connection"""
-    return mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="nikhil26@",
-        database="user_auth",
-        connection_timeout=30,
-        autocommit=True
-    )
+    """Get a fresh MySQL database connection for authentication"""
+    # Use environment variables, with fallbacks for development
+    host = os.getenv("DB_HOST", "localhost")
+    user = os.getenv("DB_USER", "root")
+    password = os.getenv("DB_PASSWORD", "")
+    database = os.getenv("DB_DATABASE", "user_auth")
+    
+    try:
+        return mysql.connector.connect(
+            host=host,
+            user=user,
+            password=password,
+            database=database,
+            connection_timeout=30,
+            autocommit=True
+        )
+    except mysql.connector.Error as e:
+        print(f"❌ Database connection error: {e}")
+        raise
 
-# Initialize database connection
+def get_chat_db_connection():
+    """Get SQLite database connection for chat history"""
+    db_path = os.path.join(os.path.dirname(__file__), 'chat_history.db')
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+# Initialize MySQL database connection for users
 db = get_db_connection()
 cursor = db.cursor(dictionary=True)
-
-# Create chat_history table with session support
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS chat_history (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT,
-    session_id VARCHAR(100),
-    role VARCHAR(20),
-    message TEXT,
-    image_url TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
-""")
-db.commit()
-
-# Add image_url column if it doesn't exist
-try:
-    cursor.execute("""
-        ALTER TABLE chat_history 
-        ADD COLUMN image_url TEXT AFTER message
-    """)
-    db.commit()
-except Exception:
-    pass  # Column might already exist
 
 # Create users table if it doesn't exist
 cursor.execute("""
@@ -124,6 +244,24 @@ CREATE TABLE IF NOT EXISTS users (
 )
 """)
 db.commit()
+
+# Initialize SQLite database for chat history
+chat_db = get_chat_db_connection()
+chat_cursor = chat_db.cursor()
+
+# Create chat_history table in SQLite
+chat_cursor.execute("""
+CREATE TABLE IF NOT EXISTS chat_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    session_id TEXT,
+    role TEXT,
+    message TEXT,
+    image_url TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+chat_db.commit()
 
 
 # ============================================================================
@@ -146,50 +284,51 @@ def signup():
         req_db = get_db_connection()
         req_cursor = req_db.cursor(dictionary=True)
         
-        # Check if user already exists
-        req_cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
-        existing_user = req_cursor.fetchone()
-        
-        if existing_user:
+        try:
+            # Check if user already exists
+            req_cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
+            existing_user = req_cursor.fetchone()
+            
+            if existing_user:
+                return jsonify({"message": "Email already registered"}), 400
+
+            # Hash password (use bcrypt in production for security)
+            hashed_password = hashlib.sha256(password.encode()).hexdigest()
+
+            # Insert new user
+            req_cursor.execute(
+                "INSERT INTO users (name, email, password) VALUES (%s, %s, %s)",
+                (name, email, hashed_password)
+            )
+            req_db.commit()
+
+            # Get the newly created user
+            req_cursor.execute("SELECT id, name, email, avatar FROM users WHERE email = %s", (email,))
+            user = req_cursor.fetchone()
+
+            # Generate a simple token (use JWT in production)
+            token = secrets.token_urlsafe(32)
+
+            return jsonify({
+                "message": "User registered successfully",
+                "user": {
+                    "id": user["id"],
+                    "name": user["name"],
+                    "email": user["email"],
+                    "avatar": user["avatar"]
+                },
+                "token": token
+            }), 201
+        finally:
             req_cursor.close()
             req_db.close()
-            return jsonify({"message": "Email already registered"}), 400
-
-        # Hash password (simple implementation - use bcrypt in production)
-        import hashlib
-        hashed_password = hashlib.sha256(password.encode()).hexdigest()
-
-        # Insert new user
-        req_cursor.execute(
-            "INSERT INTO users (name, email, password) VALUES (%s, %s, %s)",
-            (name, email, hashed_password)
-        )
-        req_db.commit()
-
-        # Get the newly created user
-        req_cursor.execute("SELECT id, name, email, avatar FROM users WHERE email = %s", (email,))
-        user = req_cursor.fetchone()
-        req_cursor.close()
-        req_db.close()
-
-        # Generate a simple token (use JWT in production)
-        import secrets
-        token = secrets.token_urlsafe(32)
-
-        return jsonify({
-            "message": "User registered successfully",
-            "user": {
-                "id": user["id"],
-                "name": user["name"],
-                "email": user["email"],
-                "avatar": user["avatar"]
-            },
-            "token": token
-        }), 201
-
+            
+    except mysql.connector.Error as e:
+        print(f"❌ Signup database error: {e}")
+        traceback.print_exc()
+        return jsonify({"message": "Registration failed. Database error."}), 500
     except Exception as e:
         print(f"❌ Signup error: {e}")
-        import traceback
         traceback.print_exc()
         return jsonify({"message": "Registration failed. Please try again."}), 500
 
@@ -206,43 +345,46 @@ def login():
             return jsonify({"message": "Email and password are required"}), 400
 
         # Hash the provided password
-        import hashlib
         hashed_password = hashlib.sha256(password.encode()).hexdigest()
 
         # Get fresh database connection for this request
         req_db = get_db_connection()
         req_cursor = req_db.cursor(dictionary=True)
         
-        # Find user
-        req_cursor.execute(
-            "SELECT id, name, email, avatar, password FROM users WHERE email = %s",
-            (email,)
-        )
-        user = req_cursor.fetchone()
-        req_cursor.close()
-        req_db.close()
+        try:
+            # Find user
+            req_cursor.execute(
+                "SELECT id, name, email, avatar, password FROM users WHERE email = %s",
+                (email,)
+            )
+            user = req_cursor.fetchone()
 
-        if not user or user["password"] != hashed_password:
-            return jsonify({"message": "Invalid email or password"}), 401
+            if not user or user["password"] != hashed_password:
+                return jsonify({"message": "Invalid email or password"}), 401
 
-        # Generate a simple token (use JWT in production)
-        import secrets
-        token = secrets.token_urlsafe(32)
+            # Generate a simple token (use JWT in production)
+            token = secrets.token_urlsafe(32)
 
-        return jsonify({
-            "message": "Login successful",
-            "user": {
-                "id": user["id"],
-                "name": user["name"],
-                "email": user["email"],
-                "avatar": user["avatar"]
-            },
-            "token": token
-        }), 200
+            return jsonify({
+                "message": "Login successful",
+                "user": {
+                    "id": user["id"],
+                    "name": user["name"],
+                    "email": user["email"],
+                    "avatar": user["avatar"]
+                },
+                "token": token
+            }), 200
+        finally:
+            req_cursor.close()
+            req_db.close()
 
+    except mysql.connector.Error as e:
+        print(f"❌ Login database error: {e}")
+        traceback.print_exc()
+        return jsonify({"message": "Login failed. Database error."}), 500
     except Exception as e:
         print(f"❌ Login error: {e}")
-        import traceback
         traceback.print_exc()
         return jsonify({"message": "Login failed. Please try again."}), 500
 
@@ -255,21 +397,24 @@ def login():
 def get_sessions(user_id):
     """Fetch all chat sessions for a user"""
     try:
-        cursor.execute("""
+        conn = get_chat_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
             SELECT 
                 session_id,
                 MIN(created_at) as created_at,
                 COUNT(*) as message_count,
                 (SELECT message FROM chat_history 
-                 WHERE user_id = %s AND session_id = ch.session_id 
+                 WHERE user_id = ? AND session_id = ch.session_id 
                  AND role = 'user' 
                  ORDER BY created_at ASC LIMIT 1) as title
             FROM chat_history ch
-            WHERE user_id = %s
+            WHERE user_id = ?
             GROUP BY session_id
             ORDER BY created_at DESC
         """, (user_id, user_id))
-        sessions = cursor.fetchall()
+        sessions = cur.fetchall()
         
         formatted_sessions = []
         for session in sessions:
@@ -280,6 +425,7 @@ def get_sessions(user_id):
                 "title": session["title"] if session["title"] else "New Chat"
             })
         
+        conn.close()
         return jsonify(formatted_sessions)
     except Exception as e:
         print(f"❌ Error fetching sessions: {e}")
@@ -290,12 +436,19 @@ def get_sessions(user_id):
 def get_session_messages(session_id):
     """Fetch messages for a specific session"""
     try:
-        cursor.execute(
-            "SELECT * FROM chat_history WHERE session_id = %s ORDER BY created_at ASC",
+        conn = get_chat_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute(
+            "SELECT * FROM chat_history WHERE session_id = ? ORDER BY created_at ASC",
             (session_id,)
         )
-        messages = cursor.fetchall()
-        return jsonify(messages)
+        messages = cur.fetchall()
+        
+        # Convert Row objects to dictionaries
+        result = [dict(row) for row in messages]
+        conn.close()
+        return jsonify(result)
     except Exception as e:
         print(f"❌ Error fetching session messages: {e}")
         return jsonify({"error": str(e)}), 500
@@ -323,11 +476,15 @@ def create_new_session():
 def delete_session(session_id):
     """Delete a chat session"""
     try:
-        cursor.execute(
-            "DELETE FROM chat_history WHERE session_id = %s",
+        conn = get_chat_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute(
+            "DELETE FROM chat_history WHERE session_id = ?",
             (session_id,)
         )
-        db.commit()
+        conn.commit()
+        conn.close()
         return jsonify({"status": "success", "message": "Session deleted"}), 200
     except Exception as e:
         print(f"❌ Error deleting session: {e}")
@@ -338,12 +495,19 @@ def delete_session(session_id):
 def get_chat(user_id):
     """Fetch chat history (legacy endpoint)"""
     try:
-        cursor.execute(
-            "SELECT * FROM chat_history WHERE user_id = %s ORDER BY created_at ASC",
+        conn = get_chat_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute(
+            "SELECT * FROM chat_history WHERE user_id = ? ORDER BY created_at ASC",
             (user_id,)
         )
-        chats = cursor.fetchall()
-        return jsonify(chats)
+        chats = cur.fetchall()
+        
+        # Convert Row objects to dictionaries
+        result = [dict(row) for row in chats]
+        conn.close()
+        return jsonify(result)
     except Exception as e:
         print(f"❌ Error fetching chat history: {e}")
         return jsonify({"error": str(e)}), 500
@@ -364,11 +528,15 @@ def save_chat():
         return jsonify({"error": "Missing required fields"}), 400
 
     try:
-        cursor.execute("""
+        conn = get_chat_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
             INSERT INTO chat_history (user_id, session_id, role, message, image_url)
-            VALUES (%s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?)
         """, (user_id, session_id, role, message, image_url))
-        db.commit()
+        conn.commit()
+        conn.close()
         return jsonify({"status": "success"}), 200
     except Exception as e:
         print(f"❌ Database error: {e}")
@@ -379,10 +547,64 @@ def save_chat():
 # NEW OPTIMIZED RAG ENDPOINTS
 # ============================================================================
 
+def generate_general_response(query: str) -> str:
+    """
+    Generate a general-purpose response for non-medical queries using the generator model
+    """
+    try:
+        from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+        
+        # Use the same generator model that's already loaded in pipeline
+        if pipeline_instance and hasattr(pipeline_instance, 'generator_model'):
+            tokenizer = pipeline_instance.generator_tokenizer
+            model = pipeline_instance.generator_model
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            # Fallback: load a small model
+            print("📦 Loading fallback generator model...")
+            tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-base")
+            model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base")
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            model = model.to(device)
+        
+        # Create a clear, general prompt
+        prompt = f"Answer the following question clearly and accurately:\n\nQuestion: {query}\n\nAnswer:"
+        
+        inputs = tokenizer(prompt, return_tensors="pt", max_length=512, truncation=True).to(device)
+        
+        with torch.no_grad():
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=256,
+                temperature=0.7,
+                top_p=0.9,
+                num_beams=4,
+                do_sample=False,
+                repetition_penalty=1.1,
+                pad_token_id=tokenizer.pad_token_id,
+                eos_token_id=tokenizer.eos_token_id
+            )
+        
+        answer = tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
+        
+        # If answer is too short or empty, provide a helpful fallback
+        if len(answer.split()) < 5:
+            return "I can help with that. Could you provide more context or rephrase your question?"
+        
+        return answer
+        
+    except Exception as e:
+        print(f"❌ Error generating general response: {e}")
+        traceback.print_exc()
+        return "I can help you with that. Could you please provide more details or rephrase your question?"
+
+
 @app.route("/api/ask", methods=["POST"])
 def ask():
     """
-    Main RAG query endpoint - optimized and error-protected
+    Main query endpoint with dual-mode support:
+    - Medical queries: Use specialized RAG pipeline
+    - General queries: Use general-purpose response generation
     """
     global pipeline_instance, pipeline_initialized
 
@@ -400,13 +622,13 @@ def ask():
         return jsonify({"error": "Query is required"}), 400
 
     print(f"\n{'='*80}")
-    print(f"📩 RAG Query Received: {query}")
+    print(f"📩 Query Received: {query}")
     print(f"{'='*80}")
 
     try:
         start = time.time()
 
-        # ✅ Call the RAG pipeline safely
+        # ✅ Call the RAG pipeline to determine mode
         result = None
         if hasattr(pipeline_instance, "run_query"):
             result = pipeline_instance.run_query(query)
@@ -415,8 +637,8 @@ def ask():
 
         elapsed = round(time.time() - start, 2)
 
-        if not result or "answer" not in result or not result["answer"].strip():
-            print("❌ Empty or invalid response from pipeline.")
+        if not result:
+            print("❌ Empty result from pipeline.")
             return jsonify({
                 "query": query,
                 "answer": "The AI was unable to generate a response. Please retry.",
@@ -424,7 +646,51 @@ def ask():
                 "processing_time": elapsed
             }), 500
 
-        # ✅ Normalize keys if needed
+        # ✅ Check query type and handle accordingly
+        query_type = result.get("query_type", "general")
+        
+        # Handle irrelevant queries
+        if query_type == "irrelevant":
+            return jsonify({
+                "query": query,
+                "answer": result.get("answer", "Please ask a question related to medicine, healthcare, biology, or medical history."),
+                "domains": [],
+                "confidence": 0.0,
+                "processing_time": round(time.time() - start, 2),
+                "sources": [],
+                "is_emergency": False,
+                "is_medical": False,
+                "mode": "irrelevant"
+            }), 200
+        
+        # Handle general queries
+        if result.get("requires_general_response", False):
+            print(f"🤖 Generating general response for: {query}")
+            general_answer = generate_general_response(query)
+            
+            return jsonify({
+                "query": query,
+                "answer": general_answer,
+                "domains": [],
+                "confidence": 1.0,
+                "processing_time": round(time.time() - start, 2),
+                "sources": [],
+                "is_emergency": False,
+                "is_medical": False,
+                "mode": "general"
+            }), 200
+
+        # ✅ Medical query - return RAG result
+        if not result.get("answer", "").strip():
+            print("❌ Empty medical answer from pipeline.")
+            return jsonify({
+                "query": query,
+                "answer": "The medical AI was unable to generate a response. Please retry.",
+                "confidence": 0.0,
+                "processing_time": elapsed
+            }), 500
+
+        # ✅ Normalize keys for medical response
         response = {
             "query": result.get("query", query),
             "answer": result.get("answer", "No answer generated."),
@@ -432,10 +698,12 @@ def ask():
             "confidence": result.get("metrics", {}).get("composite", 0.0),
             "processing_time": result.get("processing_time", elapsed),
             "sources": result.get("sources", []),
-            "is_emergency": result.get("is_emergency", False)
+            "is_emergency": result.get("is_emergency", False),
+            "is_medical": True,
+            "mode": "medical"
         }
 
-        print(f"✅ Answer ready in {elapsed}s (confidence: {response['confidence']:.2f})")
+        print(f"✅ Medical answer ready in {elapsed}s (confidence: {response['confidence']:.2f})")
         print(f"{'='*80}\n")
 
         return jsonify(response), 200
@@ -469,13 +737,13 @@ def health_check():
     global pipeline_initialized
     
     try:
-        from multi_domains_medical_final_rag_model import DOMAINS
-        
+        domain_catalog = get_domain_catalog()
+
         return jsonify({
             "status": "healthy",
             "pipeline_initialized": pipeline_initialized,
-            "available_domains": len(DOMAINS) if pipeline_initialized else 0,
-            "domain_names": [d.name for d in DOMAINS] if pipeline_initialized else [],
+            "available_domains": len(domain_catalog) if pipeline_initialized else 0,
+            "domain_names": [d["name"] for d in domain_catalog] if pipeline_initialized else [],
             "timestamp": datetime.now().isoformat()
         }), 200
         
@@ -501,15 +769,15 @@ def get_domains():
     }
     """
     try:
-        from multi_domains_medical_final_rag_model import DOMAINS
-        
+        domain_catalog = get_domain_catalog()
+
         domains_list = [
             {
-                "name": d.name,
-                "dataset": d.dataset_name,
-                "has_index": os.path.exists(d.index_path)
+                "name": d["name"],
+                "dataset": d["dataset"],
+                "has_index": os.path.exists(d["index_path"]) if d.get("index_path") else False
             }
-            for d in DOMAINS
+            for d in domain_catalog
         ]
         
         return jsonify({
@@ -526,6 +794,11 @@ def get_domains():
 # ============================================================================
 
 if __name__ == "__main__":
+    # Get configuration from environment variables
+    port = int(os.getenv("PORT", 5000))
+    debug = os.getenv("FLASK_DEBUG", "False").lower() == "true"
+    flask_env = os.getenv("FLASK_ENV", "development")
+    
     print("\n" + "="*80)
     print("*** STARTING MEDIRAG BACKEND SERVER ***")
     print("="*80 + "\n")
@@ -535,9 +808,10 @@ if __name__ == "__main__":
     
     print("\n" + "="*80)
     print("Server Configuration:")
-    print("   Host: 0.0.0.0")
-    print("   Port: 5000")
-    print("   Debug: True")
+    print(f"   Environment: {flask_env}")
+    print(f"   Host: 0.0.0.0")
+    print(f"   Port: {port}")
+    print(f"   Debug: {debug}")
     print("="*80 + "\n")
     
     print("Available Endpoints:")
@@ -551,5 +825,5 @@ if __name__ == "__main__":
     print("   POST /api/chat/save")
     print("="*80 + "\n")
     
-    # ✅ Disable debug mode to avoid reloader issues
-    app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
+    # Disable debug mode to avoid reloader issues in production
+    app.run(host="0.0.0.0", port=port, debug=debug, use_reloader=False)

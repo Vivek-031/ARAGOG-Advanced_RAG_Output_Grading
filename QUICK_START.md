@@ -1,80 +1,149 @@
-# 🚀 Quick Start Guide - Medical RAG
+# MediRAG Deployment Quick Start
 
-## Prerequisites Check
+## 🎯 Quick Start (5 Steps)
 
-- ✅ **Node.js v22.18.0** - Installed
-- ✅ **npm v11.6.1** - Installed  
-- ⚠️ **Python 3.10+** - **NOT INSTALLED** → [Download Here](https://www.python.org/downloads/)
-
-## Step 1: Install Python (Required)
-
-1. Download from [python.org/downloads](https://www.python.org/downloads/)
-2. ✅ Check **"Add Python to PATH"** during installation
-3. Restart terminal
-4. Verify: `python --version`
-
-## Step 2: Start Backend (Terminal 1)
-
+### Step 1: Prepare GitHub
 ```powershell
-cd "c:\Users\Admin\Downloads\medirag-ai-main\Backend\Backend"
-.\start_backend.ps1
+cd c:\Users\Admin\Documents\medirag-ai-main
+
+git init
+git add .
+git commit -m "Initial commit: MediRAG deployment"
+git branch -M main
+
+# Create repo on GitHub first: https://github.com/new
+# Then connect:
+git remote add origin https://github.com/YOUR_USERNAME/medirag-ai.git
+git push -u origin main
 ```
 
-Wait for:
+### Step 2: Create Render Account
+- Go to https://render.com
+- Sign up with GitHub
+- Authorize GitHub access
+
+### Step 3: Deploy via Blueprint
+1. Click **Blueprints** in Render dashboard
+2. Click **+ New**
+3. Select **GitHub**
+4. Search for `medirag-ai` repo
+5. Click **Connect**
+6. Review settings (render.yaml configured automatically)
+7. Click **Create Resources**
+
+### Step 4: Wait for Deployment
+- Backend: ~5-10 minutes (model loading)
+- Frontend: ~2-3 minutes
+- Database: ~1-2 minutes
+
+### Step 5: Verify
+```bash
+# Check backend health
+curl https://your-backend-name.onrender.com/api/health
+
+# Visit frontend
+https://your-frontend-name.onrender.com
 ```
-✅ Medical RAG backend is running successfully
- * Running on http://0.0.0.0:5000
-```
-
-## Step 3: Start Frontend (Terminal 2)
-
-```powershell
-cd "c:\Users\Admin\Downloads\medirag-ai-main\Frontend"
-.\start_frontend.ps1
-```
-
-## Step 4: Open Browser
-
-Navigate to: **http://localhost:5173**
-
-## First Time Setup
-
-⏳ **Expect 20-30 minutes for:**
-- Python packages installation
-- ML models download (~10GB)
-- Medical datasets loading
-
-## Test Questions
-
-Try these in the UI:
-- "What causes chest pain?"
-- "What are symptoms of diabetes?"
-- "How to prevent infections?"
-- "Explain heart disease"
-
-## Troubleshooting
-
-### PowerShell Script Error
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-### Python Not Found
-1. Restart terminal after Python installation
-2. Try `py` instead of `python`
-
-### Backend Not Responding
-- Check Terminal 1 for errors
-- Ensure port 5000 is free
-- Wait for model loading to complete
-
-## Quick Help
-
-📖 **Full Documentation**: `SETUP_INSTRUCTIONS.md`
-📋 **Setup Status**: `SETUP_COMPLETE.md`
-🔧 **Backend Server**: http://localhost:5000
-🌐 **Frontend UI**: http://localhost:5173
 
 ---
 
-**⚡ After Python is installed, you're 2 commands away from success!**
+## 📝 Files Already Created
+
+✅ `render.yaml` - Infrastructure configuration
+✅ `Procfile` - Backend startup command
+✅ `.env.production` - Frontend production config
+✅ `app.py` - Updated for environment variables
+✅ `vite.config.ts` - Updated with API proxy
+
+---
+
+## 🔑 Key Environment Variables
+
+| Variable | Backend | Frontend |
+|----------|---------|----------|
+| PORT | ✅ (auto: 5000) | — |
+| FLASK_ENV | ✅ (production) | — |
+| FLASK_DEBUG | ✅ (False) | — |
+| DB_HOST | ✅ (auto) | — |
+| DB_USER | ✅ (auto) | — |
+| DB_PASSWORD | ✅ (auto) | — |
+| VITE_API_URL | — | ✅ (auto) |
+
+All auto-configured by render.yaml!
+
+---
+
+## 🆘 Troubleshooting
+
+### Backend won't start
+- Check logs: Render Dashboard → medirag-backend → Logs
+- Look for model loading messages
+- Wait 5-10 minutes for full initialization
+
+### Frontend shows blank page
+- Check browser console for errors
+- Verify VITE_API_URL is correct
+- Check if backend is healthy
+
+### Database connection error
+- Ensure DATABASE environment variables are set
+- Wait 2-3 minutes for MySQL to initialize
+- Verify database credentials in Render dashboard
+
+### 502 Bad Gateway
+- Backend initializing (normal, wait 2-3 min)
+- Check backend logs
+- Refresh page
+
+---
+
+## 📊 Deployment URLs
+
+After deployment:
+- **Backend:** https://**medirag-backend**.onrender.com
+- **Frontend:** https://**medirag-frontend**.onrender.com
+- **Database:** Auto-managed
+
+Replace **medirag-backend** and **medirag-frontend** with actual service names shown in Render dashboard.
+
+---
+
+## 💡 After Deployment
+
+### Update Code
+```bash
+# Make changes locally
+git add .
+git commit -m "Your changes"
+git push origin main
+
+# Render auto-deploys!
+```
+
+### Monitor Logs
+1. Render Dashboard → Service → Logs
+2. Check for errors or warnings
+
+### Scale Services (if needed)
+1. Upgrade from free to paid tier
+2. Increase instance count
+3. Upgrade database plan
+
+---
+
+## ✅ Deployment Checklist
+
+- [ ] GitHub repository created
+- [ ] Code pushed to GitHub
+- [ ] Render account created
+- [ ] Blueprint deployment started
+- [ ] Services showing "Live" status
+- [ ] Backend health check passes
+- [ ] Frontend loads successfully
+- [ ] Can create account
+- [ ] Can ask medical questions
+- [ ] Chat history saves
+
+---
+
+**That's it! Your MediRAG is now deployed! 🎉**
