@@ -157,16 +157,72 @@ def enhance_query_with_context(current_query, memory, selected_domains):
 
 def is_medical_query(query):
     """
-    Comprehensive medical vs non-medical query detection
-    Production-grade keyword lists
+    Determines if a query is medical-related for ARAGOG Medical.
+    Returns True only for medical queries, False otherwise.
     """
+    if not query or not query.strip():
+        return False
+        
+    query_lower = query.lower().strip()
     
-    query_lower = query.lower()
+    # NON-MEDICAL DOMAINS (case-insensitive check)
+    non_medical_domains = [
+        # Entertainment
+        'movie', 'film', 'tv show', 'television', 'netflix', 'hbo', 'disney+', 'prime video',
+        'actor', 'actress', 'director', 'producer', 'screenplay', 'oscar', 'emmy', 'golden globe',
+        'music', 'song', 'album', 'band', 'singer', 'artist', 'concert', 'tour', 'festival',
+        'game', 'gaming', 'video game', 'playstation', 'xbox', 'nintendo', 'steam', 'esports',
+        'sport', 'football', 'soccer', 'basketball', 'tennis', 'golf', 'cricket', 'olympics',
+        'celebrity', 'gossip', 'entertainment news', 'hollywood', 'bollywood',
+        'book', 'novel', 'author', 'publisher', 'best seller',
+        'art', 'painting', 'sculpture', 'exhibition', 'museum', 'gallery',
+        'theater', 'play', 'musical', 'broadway', 'opera', 'ballet',
+        'comic', 'manga', 'anime', 'cartoon', 'animation',
+        'podcast', 'youtuber', 'streamer', 'influencer', 'social media',
+        
+        # Technology
+        'computer', 'laptop', 'smartphone', 'tablet', 'gadget', 'device',
+        'software', 'app', 'application', 'program', 'coding', 'programming',
+        'ai', 'artificial intelligence', 'machine learning', 'deep learning',
+        'blockchain', 'cryptocurrency', 'bitcoin', 'ethereum', 'nft',
+        'vr', 'virtual reality', 'ar', 'augmented reality', 'metaverse',
+        'startup', 'tech company', 'silicon valley', 'venture capital',
+        'hack', 'cybersecurity', 'data breach', 'privacy', 'encryption',
+        'gaming pc', 'graphics card', 'cpu', 'gpu', 'ram', 'ssd',
+        'smart home', 'iot', 'internet of things', 'wearable', 'fitness tracker',
+        'drone', 'robot', 'automation', 'self-driving', 'autonomous vehicle',
+        
+        # General Knowledge
+        'weather', 'forecast', 'temperature', 'climate',
+        'recipe', 'cooking', 'baking', 'food', 'restaurant', 'cuisine',
+        'travel', 'vacation', 'hotel', 'flight', 'destination', 'tourism',
+        'history', 'historical', 'ancient', 'war', 'battle', 'empire',
+        'geography', 'country', 'city', 'capital', 'population',
+        'science', 'physics', 'chemistry', 'biology', 'astronomy', 'space',
+        'mathematics', 'algebra', 'calculus', 'statistics', 'equation',
+        'language', 'grammar', 'vocabulary', 'translation', 'dictionary',
+        'philosophy', 'religion', 'theology', 'spirituality', 'mythology',
+        'politics', 'government', 'election', 'president', 'prime minister',
+        'economy', 'stock market', 'trading', 'investment', 'cryptocurrency',
+        'fashion', 'clothing', 'accessory', 'jewelry', 'cosmetic', 'makeup',
+        'car', 'automobile', 'vehicle', 'motorcycle', 'bicycle', 'transportation',
+        'pet', 'dog', 'cat', 'animal', 'wildlife', 'pet care', 'veterinary',
+        'home', 'garden', 'diy', 'renovation', 'furniture', 'appliance',
+        'education', 'school', 'university', 'college', 'course', 'degree',
+        'job', 'career', 'employment', 'resume', 'interview', 'salary',
+        'sport', 'fitness', 'exercise', 'workout', 'gym', 'yoga', 'meditation',
+        'relationship', 'dating', 'marriage', 'family', 'parenting', 'children',
+        'finance', 'banking', 'insurance', 'mortgage', 'loan', 'credit',
+        'legal', 'law', 'lawsuit', 'court', 'attorney', 'lawyer', 'contract',
+        'environment', 'climate change', 'sustainability', 'recycling', 'pollution'
+    ]
     
-    # ================================================================
+    # Check for non-medical domains first (higher priority)
+    for domain in non_medical_domains:
+        if domain in query_lower:
+            return False
+    
     # MEDICAL KEYWORDS (Grouped by category)
-    # ================================================================
-    
     medical_keywords = {
         # SYMPTOMS & COMPLAINTS
         'symptoms': [
@@ -198,8 +254,8 @@ def is_medical_query(query):
             'depression', 'anxiety', 'ptsd', 'ocd',
             'dermatitis', 'eczema', 'psoriasis', 'acne', 'rosacea',
             'melanoma', 'carcinoma', 'lymphoma', 'myeloma',
-            'leukemia', 'lymphoma', 'hodgkin',
-            'hiv', 'aids', 'covid', 'coronavirus', 'pandemic',
+            'leukemia', 'hodgkin',
+            'hiv', 'aids', 'covid', 'coronavirus',
             'flu', 'influenza', 'pneumonia', 'tuberculosis', 'tb',
             'hepatitis', 'cirrhosis', 'liver disease',
             'kidney disease', 'renal', 'nephritis', 'nephrotic',
@@ -208,7 +264,7 @@ def is_medical_query(query):
             'fibromyalgia', 'lupus', 'sle', 'autoimmune',
             'thyroid', 'hyperthyroid', 'hypothyroid', 'grave',
             'osteoporosis', 'bone disease', 'fracture',
-            'migraine', 'headache', 'tension headache',
+            'migraine', 'tension headache',
             'infection', 'bacterial', 'viral', 'fungal',
             'inflammation', 'inflammatory', 'autoimmune',
             'pregnancy', 'gestational', 'preeclampsia',
@@ -232,10 +288,11 @@ def is_medical_query(query):
             'injection', 'iv', 'infusion', 'transfusion',
             'biopsy', 'ultrasound', 'ct scan', 'mri', 'xray',
             'endoscopy', 'colonoscopy', 'bronchoscopy',
-            'therapy', 'psychotherapy', 'counseling', 'psychiatrist',
+            'psychotherapy', 'counseling', 'psychiatrist',
             'rehabilitation', 'rehab', 'physiotherapy',
             'preventive', 'prevention', 'preventative',
-            'screening', 'test', 'diagnosis', 'diagnose'
+            'screening', 'test', 'diagnosis', 'diagnose',
+            'prescription', 'dosage', 'side effect', 'adverse effect'
         ],
         
         # MEDICAL BODY PARTS
@@ -249,7 +306,9 @@ def is_medical_query(query):
             'eye', 'ear', 'nose', 'throat', 'mouth',
             'spine', 'vertebra', 'disc', 'cervical', 'lumbar',
             'joint', 'cartilage', 'ligament', 'tendon',
-            'breast', 'prostate', 'testicle', 'ovary', 'uterus'
+            'breast', 'prostate', 'testicle', 'ovary', 'uterus',
+            'abdomen', 'chest', 'back', 'shoulder', 'elbow', 'wrist',
+            'hip', 'knee', 'ankle', 'foot', 'feet', 'hand', 'finger', 'toe'
         ],
         
         # MEDICAL MEASUREMENTS & VALUES
@@ -263,7 +322,8 @@ def is_medical_query(query):
             'blood count', 'white blood cell', 'red blood cell',
             'platelet', 'hemoglobin', 'hematocrit',
             'creatinine', 'bun', 'urea', 'sodium', 'potassium',
-            'ph', 'oxygen saturation', 'o2', 'spo2'
+            'ph', 'oxygen saturation', 'o2', 'spo2',
+            'blood test', 'lab test', 'urine test', 'stool test'
         ],
         
         # MEDICAL PROFESSIONALS & SETTINGS
@@ -276,7 +336,15 @@ def is_medical_query(query):
             'ophthalmologist', 'optometrist', 'audiologist',
             'pharmacist', 'dietitian', 'nutritionist',
             'chiropractor', 'acupuncturist', 'homeopath',
-            'patient', 'client', 'healthcare provider'
+            'patient', 'client', 'healthcare provider',
+            'general practitioner', 'gp', 'family doctor', 'primary care',
+            'specialist', 'consultant', 'surgeon', 'anesthesiologist',
+            'radiologist', 'pathologist', 'oncologist', 'hematologist',
+            'endocrinologist', 'gastroenterologist', 'nephrologist',
+            'pulmonologist', 'rheumatologist', 'urologist',
+            'gynecologist', 'obstetrician', 'neonatologist',
+            'pediatrician', 'geriatrician', 'palliative care',
+            'emergency medicine', 'intensivist', 'hospitalist'
         ],
         
         'settings': [
@@ -286,7 +354,11 @@ def is_medical_query(query):
             'laboratory', 'lab', 'diagnostic center',
             'doctor\'s office', 'medical office', 'practice',
             'nursing home', 'assisted living', 'rehab center',
-            'mental health', 'psychiatric', 'sanitarium'
+            'mental health', 'psychiatric', 'sanitarium',
+            'icu', 'intensive care unit', 'ccu', 'coronary care unit',
+            'operating room', 'or', 'recovery room', 'ward', 'ward',
+            'healthcare facility', 'medical facility', 'treatment center',
+            'outpatient clinic', 'inpatient', 'outpatient'
         ],
         
         # MEDICAL SPECIALTIES & DOMAINS
@@ -785,17 +857,10 @@ def main():
                 continue
             
             # ================================================================
-            # CHECK IF MEDICAL QUERY
+            # CHECK IF MEDICAL QUERY (ARAGOG Medical Domain Restriction)
             # ================================================================
             if not is_medical_query(user_input):
-                print("\n⚠️ I'm a Medical QA system and only answer medical questions!")
-                print("   Please ask me about medical topics like:")
-                print("   - Symptoms and diseases")
-                print("   - Treatments and medications")
-                print("   - Health conditions")
-                print("   - Medical advice")
-                print("\n   Example: 'What are symptoms of diabetes?'")
-                print("-"*70)
+                print("\nYou can ask queries related to the medical field.")
                 continue
             
             # ================================================================

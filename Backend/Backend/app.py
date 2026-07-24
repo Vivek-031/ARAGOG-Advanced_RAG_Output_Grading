@@ -6,6 +6,7 @@ Uses multi-domains-medical-final-rag-model.py as the core engine
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import mysql.connector
+import sqlite3
 from datetime import datetime
 import os
 import sys
@@ -74,7 +75,7 @@ CORS(app)
 # ============================================================================
 
 def get_db_connection():
-    """Get a fresh database connection"""
+    """Get a fresh MySQL database connection for authentication"""
     return mysql.connector.connect(
         host="localhost",
         user="root",
@@ -84,33 +85,16 @@ def get_db_connection():
         autocommit=True
     )
 
-# Initialize database connection
+def get_chat_db_connection():
+    """Get SQLite database connection for chat history"""
+    db_path = os.path.join(os.path.dirname(__file__), 'chat_history.db')
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+# Initialize MySQL database connection for users
 db = get_db_connection()
 cursor = db.cursor(dictionary=True)
-
-# Create chat_history table with session support
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS chat_history (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT,
-    session_id VARCHAR(100),
-    role VARCHAR(20),
-    message TEXT,
-    image_url TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
-""")
-db.commit()
-
-# Add image_url column if it doesn't exist
-try:
-    cursor.execute("""
-        ALTER TABLE chat_history 
-        ADD COLUMN image_url TEXT AFTER message
-    """)
-    db.commit()
-except Exception:
-    pass  # Column might already exist
 
 # Create users table if it doesn't exist
 cursor.execute("""
@@ -124,6 +108,24 @@ CREATE TABLE IF NOT EXISTS users (
 )
 """)
 db.commit()
+
+# Initialize SQLite database for chat history
+chat_db = get_chat_db_connection()
+chat_cursor = chat_db.cursor()
+
+# Create chat_history table in SQLite
+chat_cursor.execute("""
+CREATE TABLE IF NOT EXISTS chat_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    session_id TEXT,
+    role TEXT,
+    message TEXT,
+    image_url TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+chat_db.commit()
 
 
 # ============================================================================
@@ -255,21 +257,24 @@ def login():
 def get_sessions(user_id):
     """Fetch all chat sessions for a user"""
     try:
-        cursor.execute("""
+        conn = get_chat_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
             SELECT 
                 session_id,
                 MIN(created_at) as created_at,
                 COUNT(*) as message_count,
                 (SELECT message FROM chat_history 
-                 WHERE user_id = %s AND session_id = ch.session_id 
+                 WHERE user_id = ? AND session_id = ch.session_id 
                  AND role = 'user' 
                  ORDER BY created_at ASC LIMIT 1) as title
             FROM chat_history ch
-            WHERE user_id = %s
+            WHERE user_id = ?
             GROUP BY session_id
             ORDER BY created_at DESC
         """, (user_id, user_id))
-        sessions = cursor.fetchall()
+        sessions = cur.fetchall()
         
         formatted_sessions = []
         for session in sessions:
@@ -280,6 +285,7 @@ def get_sessions(user_id):
                 "title": session["title"] if session["title"] else "New Chat"
             })
         
+        conn.close()
         return jsonify(formatted_sessions)
     except Exception as e:
         print(f"❌ Error fetching sessions: {e}")
@@ -290,12 +296,19 @@ def get_sessions(user_id):
 def get_session_messages(session_id):
     """Fetch messages for a specific session"""
     try:
-        cursor.execute(
-            "SELECT * FROM chat_history WHERE session_id = %s ORDER BY created_at ASC",
+        conn = get_chat_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute(
+            "SELECT * FROM chat_history WHERE session_id = ? ORDER BY created_at ASC",
             (session_id,)
         )
-        messages = cursor.fetchall()
-        return jsonify(messages)
+        messages = cur.fetchall()
+        
+        # Convert Row objects to dictionaries
+        result = [dict(row) for row in messages]
+        conn.close()
+        return jsonify(result)
     except Exception as e:
         print(f"❌ Error fetching session messages: {e}")
         return jsonify({"error": str(e)}), 500
@@ -323,11 +336,15 @@ def create_new_session():
 def delete_session(session_id):
     """Delete a chat session"""
     try:
-        cursor.execute(
-            "DELETE FROM chat_history WHERE session_id = %s",
+        conn = get_chat_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute(
+            "DELETE FROM chat_history WHERE session_id = ?",
             (session_id,)
         )
-        db.commit()
+        conn.commit()
+        conn.close()
         return jsonify({"status": "success", "message": "Session deleted"}), 200
     except Exception as e:
         print(f"❌ Error deleting session: {e}")
@@ -338,12 +355,19 @@ def delete_session(session_id):
 def get_chat(user_id):
     """Fetch chat history (legacy endpoint)"""
     try:
-        cursor.execute(
-            "SELECT * FROM chat_history WHERE user_id = %s ORDER BY created_at ASC",
+        conn = get_chat_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute(
+            "SELECT * FROM chat_history WHERE user_id = ? ORDER BY created_at ASC",
             (user_id,)
         )
-        chats = cursor.fetchall()
-        return jsonify(chats)
+        chats = cur.fetchall()
+        
+        # Convert Row objects to dictionaries
+        result = [dict(row) for row in chats]
+        conn.close()
+        return jsonify(result)
     except Exception as e:
         print(f"❌ Error fetching chat history: {e}")
         return jsonify({"error": str(e)}), 500
@@ -364,11 +388,15 @@ def save_chat():
         return jsonify({"error": "Missing required fields"}), 400
 
     try:
-        cursor.execute("""
+        conn = get_chat_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
             INSERT INTO chat_history (user_id, session_id, role, message, image_url)
-            VALUES (%s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?)
         """, (user_id, session_id, role, message, image_url))
-        db.commit()
+        conn.commit()
+        conn.close()
         return jsonify({"status": "success"}), 200
     except Exception as e:
         print(f"❌ Database error: {e}")
@@ -379,10 +407,63 @@ def save_chat():
 # NEW OPTIMIZED RAG ENDPOINTS
 # ============================================================================
 
+def generate_general_response(query: str) -> str:
+    """
+    Generate a general-purpose response for non-medical queries using the generator model
+    """
+    try:
+        from multi_domains_medical_final_rag_model import AutoTokenizer, AutoModelForSeq2SeqLM
+        import torch
+        
+        # Use the same generator model that's already loaded in pipeline
+        if pipeline_instance and hasattr(pipeline_instance, 'generator_model'):
+            tokenizer = pipeline_instance.generator_tokenizer
+            model = pipeline_instance.generator_model
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            # Fallback: load a small model
+            tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-base")
+            model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base")
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            model = model.to(device)
+        
+        # Create a clear, general prompt
+        prompt = f"Answer the following question clearly and accurately:\n\nQuestion: {query}\n\nAnswer:"
+        
+        inputs = tokenizer(prompt, return_tensors="pt", max_length=512, truncation=True).to(device)
+        
+        with torch.no_grad():
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=256,
+                temperature=0.7,
+                top_p=0.9,
+                num_beams=4,
+                do_sample=False,
+                repetition_penalty=1.1,
+                pad_token_id=tokenizer.pad_token_id,
+                eos_token_id=tokenizer.eos_token_id
+            )
+        
+        answer = tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
+        
+        # If answer is too short or empty, provide a helpful fallback
+        if len(answer.split()) < 5:
+            return "I can help with that. Could you provide more context or rephrase your question?"
+        
+        return answer
+        
+    except Exception as e:
+        print(f"❌ Error generating general response: {e}")
+        return "I can help you with that. Could you please provide more details or rephrase your question?"
+
+
 @app.route("/api/ask", methods=["POST"])
 def ask():
     """
-    Main RAG query endpoint - optimized and error-protected
+    Main query endpoint with dual-mode support:
+    - Medical queries: Use specialized RAG pipeline
+    - General queries: Use general-purpose response generation
     """
     global pipeline_instance, pipeline_initialized
 
@@ -400,13 +481,13 @@ def ask():
         return jsonify({"error": "Query is required"}), 400
 
     print(f"\n{'='*80}")
-    print(f"📩 RAG Query Received: {query}")
+    print(f"📩 Query Received: {query}")
     print(f"{'='*80}")
 
     try:
         start = time.time()
 
-        # ✅ Call the RAG pipeline safely
+        # ✅ Call the RAG pipeline to determine mode
         result = None
         if hasattr(pipeline_instance, "run_query"):
             result = pipeline_instance.run_query(query)
@@ -415,8 +496,8 @@ def ask():
 
         elapsed = round(time.time() - start, 2)
 
-        if not result or "answer" not in result or not result["answer"].strip():
-            print("❌ Empty or invalid response from pipeline.")
+        if not result:
+            print("❌ Empty result from pipeline.")
             return jsonify({
                 "query": query,
                 "answer": "The AI was unable to generate a response. Please retry.",
@@ -424,7 +505,51 @@ def ask():
                 "processing_time": elapsed
             }), 500
 
-        # ✅ Normalize keys if needed
+        # ✅ Check query type and handle accordingly
+        query_type = result.get("query_type", "general")
+        
+        # Handle irrelevant queries
+        if query_type == "irrelevant":
+            return jsonify({
+                "query": query,
+                "answer": result.get("answer", "Please ask a question related to medicine, healthcare, biology, or medical history."),
+                "domains": [],
+                "confidence": 0.0,
+                "processing_time": round(time.time() - start, 2),
+                "sources": [],
+                "is_emergency": False,
+                "is_medical": False,
+                "mode": "irrelevant"
+            }), 200
+        
+        # Handle general queries
+        if result.get("requires_general_response", False):
+            print(f"🤖 Generating general response for: {query}")
+            general_answer = generate_general_response(query)
+            
+            return jsonify({
+                "query": query,
+                "answer": general_answer,
+                "domains": [],
+                "confidence": 1.0,
+                "processing_time": round(time.time() - start, 2),
+                "sources": [],
+                "is_emergency": False,
+                "is_medical": False,
+                "mode": "general"
+            }), 200
+
+        # ✅ Medical query - return RAG result
+        if not result.get("answer", "").strip():
+            print("❌ Empty medical answer from pipeline.")
+            return jsonify({
+                "query": query,
+                "answer": "The medical AI was unable to generate a response. Please retry.",
+                "confidence": 0.0,
+                "processing_time": elapsed
+            }), 500
+
+        # ✅ Normalize keys for medical response
         response = {
             "query": result.get("query", query),
             "answer": result.get("answer", "No answer generated."),
@@ -432,10 +557,12 @@ def ask():
             "confidence": result.get("metrics", {}).get("composite", 0.0),
             "processing_time": result.get("processing_time", elapsed),
             "sources": result.get("sources", []),
-            "is_emergency": result.get("is_emergency", False)
+            "is_emergency": result.get("is_emergency", False),
+            "is_medical": True,
+            "mode": "medical"
         }
 
-        print(f"✅ Answer ready in {elapsed}s (confidence: {response['confidence']:.2f})")
+        print(f"✅ Medical answer ready in {elapsed}s (confidence: {response['confidence']:.2f})")
         print(f"{'='*80}\n")
 
         return jsonify(response), 200
